@@ -1,0 +1,12 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  rknn-env:
+    build:
+      context: .
+      dockerfile: Dockerfile_ubuntu_20_04_for_cp38
+    volumes:
+      - ./app:/app 
+    working_dir: /app 
+    command: ["python", "convert.py"]
