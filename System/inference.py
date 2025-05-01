@@ -1,68 +1,95 @@
 import cv2
 import numpy as np
-import datetime
+import time
+import threading
 from rknnlite.api import RKNNLite
 
-IMG_SIZE = 640
 CAM_WIDTH = 640
 CAM_HEIGHT = 640
+RKNN_MODEL_PATH = 'res/road_model.rknn'
+VIDEO_PATH = 0 # test video : 'assets/original_video.mp4'
 CLASSES = ("dry", "ice", "snow", "wet")
+CONF_THRESHOLD = 0.4
 
-# decice tree for rk356x/rk3588
-RK3588_RKNN_MODEL = 'res/yolov5_non_quant.rknn'
+class VideoStream:
+    def __init__(self, src="original.mp4"):
+        self.stream = cv2.VideoCapture(src)
+        self.ret, self.frame = self.stream.read()
+        self.stopped = False
+        self.lock = threading.Lock()
 
-def draw_detections(frame, outputs, class_names, conf_threshold):
-    """
-    프레임에 YOLOv5 detection 결과를 표시하는 함수.
+    def start(self):
+        threading.Thread(target=self.update, daemon=True).start()
+        return self
 
-    Args:
-        frame: OpenCV 프레임 (numpy array).
-        outputs: YOLOv5 모델 outputs (list type, shape: (1, 1, 22500, 9)).
-        class_names: 클래스 이름 리스트.
-        conf_threshold: detection confidence 임계값.
+    def update(self):
+        while not self.stopped:
+            ret, frame = self.stream.read()
+            if not ret:
+                self.stop()
+                return
+            with self.lock:
+                self.ret = ret
+                self.frame = frame
 
-    Returns:
-        processed_frame: detection이 표시된 OpenCV 프레임.
-    """
-    processed_frame = frame.copy()
-    output = outputs[0] # list type 이므로 첫 번째 element
-    output_reshaped = output.reshape(-1, 9) # (22500, 9) 로 reshape
+    def read(self):
+        with self.lock:
+            return self.ret, self.frame.copy()
 
-    H, W, _ = frame.shape
+    def stop(self):
+        self.stopped = True
+        self.stream.release()
 
+def draw_detections(frame, outputs, class_names, conf_threshold, iou_threshold=0.4):
+    output = outputs[0]
+    output_reshaped = output.reshape(-1, 9)
+
+    boxes = []
+    confidences = []
+    class_ids = []
+
+    # divide box, confidence, class_id
     for detection in output_reshaped:
-        confidence = detection[4] # objectness score (5번째 값)
-        #print(detection[:4])
-
+        confidence = detection[4]
+        # confidence threshold
         if confidence > conf_threshold:
-            # bounding box 좌표 (center x, center y, width, height)
             center_x, center_y, w, h = detection[0], detection[1], detection[2], detection[3]
+            x_min = max(0, int(center_x - w / 2))
+            y_min = max(0, int(center_y - h / 2))
 
-            x_min = int(center_x - w / 2)
-            y_min = int(center_y - h / 2)
-            x_max = int(center_x + w / 2)
-            y_max = int(center_y + h / 2)
-            
-            # objectness score 와 class probabilities
             scores = detection[5:]
-            class_id = np.argmax(scores) # 가장 높은 확률을 가진 클래스 ID
-            class_name = class_names[class_id] if class_names and class_id < len(class_names) else str(class_id) # 클래스 이름 or class id
-            label = f"{class_name}: {confidence:.2f}"
-            print(w)
+            class_id = np.argmax(scores)
 
-            # bounding box 및 label draw
-            color = (0, 255, 0)
-            cv2.rectangle(processed_frame, (x_min, y_min), (x_max, y_max), color, 2)
-            cv2.putText(processed_frame, label, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            boxes.append([x_min, y_min, int(w), int(h)])
+            confidences.append(float(confidence))
+            class_ids.append(class_id)
 
-    return processed_frame
+    # calculate NMS 
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, iou_threshold)
+
+    for i in indices:
+        i = i[0] if isinstance(i, (list, tuple, np.ndarray)) else i
+        box = boxes[i]
+        x, y, w, h = box
+        x_max = min(x+w, CAM_WIDTH)
+        y_max = min(y+h, CAM_HEIGHT)
+        class_id = class_ids[i]
+        class_name = class_names[class_id] if class_id < len(class_names) else str(class_id)
+        label = f"{class_name}: {confidences[i]:.2f}"
+
+        color = (0, 255, 0)
+        cv2.rectangle(frame, (x, y), (x_max, y_max), color, 2)
+        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    return frame
 
 if __name__ == '__main__':
-    conf_threshold = 0.6
-    rknn_model = RK3588_RKNN_MODEL
-    rknn_lite = RKNNLite(verbose=False, verbose_file='./inference.log')
+    conf_threshold = CONF_THRESHOLD
+    rknn_model = RKNN_MODEL_PATH
 
     # load RKNN model
+    rknn_lite = RKNNLite(verbose=False, verbose_file='./inference.log')
+
     print('--> Load RKNN model')
     ret = rknn_lite.load_rknn(rknn_model)
     if ret != 0:
@@ -79,32 +106,22 @@ if __name__ == '__main__':
     print('done')
 
     # init video stream
-    vs = cv2.VideoCapture('assets/original_video.mp4')
-    vs.set(cv2.CAP_PROP_FRAME_WIDTH, IMG_SIZE)
-    vs.set(cv2.CAP_PROP_FRAME_HEIGHT, IMG_SIZE)
+    cap = VideoStream(src=VIDEO_PATH).start()
 
-    if not vs.isOpened():
-        print('Cannot capture from camera. Exiting.')
-        quit()
-
-    while True:
-        start = datetime.datetime.now()
-        ret, frame = vs.read() 
+    while not cap.stopped:
+        ret, frame = cap.read() 
         if not ret: break
-        frame_shape = frame.shape[:2]
 
-        # Inference
+        # pre-processing
+        frame = cv2.resize(frame, dsize=(CAM_WIDTH,CAM_HEIGHT))
         img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         exp_frame = np.expand_dims(img_rgb, axis=0)
-        outputs = rknn_lite.inference(inputs=[frame], data_format='nhwc')
+
+        # inference
+        outputs = rknn_lite.inference(inputs=[exp_frame], data_format='nhwc')
         
+        # post-processing (draw detection)
         processed_frame = draw_detections(frame, outputs, CLASSES, conf_threshold)
-
-        end = datetime.datetime.now()
-        total = (end-start).total_seconds()
-        fps = f'FPS : {1 / total:.2f}'
-
-        cv2.putText(processed_frame, fps, (10,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
         cv2.imshow('frame', processed_frame)
         
         # if the `q` key was pressed, break from the loop
@@ -112,8 +129,7 @@ if __name__ == '__main__':
         if key == ord("q"):
             break
 
+    # quit
     rknn_lite.release()
-    
-    # do a bit of cleanup
+    cap.stop()
     cv2.destroyAllWindows()
-    vs.release()

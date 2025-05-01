@@ -1,5 +1,14 @@
 ## Inference System
 
+### System Information
+
+| 항목    | 내용                              |
+|--------|-----------------------------------|
+| Board  | Orange Pi 5                       |
+| OS     | Armbian 25.2.1 (Bookworm)         |
+| Python | 3.10.10                           |
+| Model  | YOLOv5n                           |
+
 ### Set python version
 
 ```bash
