@@ -20,3 +20,22 @@
 3. rknn-toolkit2를 활용하여 onnx을 rknn 형식으로 변환 [(🔗)](./Converter)
 4. rknn-toolkit-lite2를 활용하여 rknpu에 rknn 모델을 추론 및 opencv로 Detection System 동작 [(🔗)](./System)
 
+### Experimental
+NPU가 탑재된 임베디드 보드를 활용하여,  
+실시간 영상 추론 시 NPU 사용 여부에 따른 성능 차이를 확인하고자 다음과 같은 실험을 진행하였습니다.  
+
+실험 결과 요약:
+- RKNPU (RKNN 모델): 평균 7~8 FPS
+- CPU (Torch 모델): 평균 1.6~2.2 FPS
+
+자세한 내용 및 결과는 [Experimental](./Experimental/) 에서 확인하세요.  
+
+### System 구성도
+<img src="./figure01.png" style="max-width:500px;">
+
+| **구분** | **제품명** | **기능** |
+| --- | --- | --- |
+| **보드** | Orange Pi 5 | 초소형, 저전력 컴퓨터 |
+| **운영체제** | Armbian | Debian계열 운영체제 |
+| **모니터** | ZEUSLAP Z10T | 터치 O, 소리 출력 O |
+| **카메라** | Logitech c270 | 720p(HD급) 영상 화질 출력 |
