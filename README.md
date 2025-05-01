@@ -31,7 +31,7 @@ NPU가 탑재된 임베디드 보드를 활용하여,
 자세한 내용 및 결과는 [Experimental](./Experimental/) 에서 확인하세요.  
 
 ### System 구성도
-<img src="./figure01.png" style="max-width:400px;">
+<img src="./figure01.png" style="max-width:200px;">
 
 | **구분** | **제품명** | **기능** |
 | --- | --- | --- |
